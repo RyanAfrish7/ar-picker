@@ -1,0 +1,19 @@
+{
+  "name": "ar-picker",
+  "version": "0.0.0",
+  "description": "A minimalist picker",
+  "main": "ar-picker.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "picker",
+    "lit-element"
+  ],
+  "author": "Afrish Khan S <ryanafrish7@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@polymer/lit-element": "^0.6.4",
+    "lit-html": "^0.14.0"
+  }
+}
