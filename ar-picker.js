@@ -24,8 +24,6 @@ class Picker extends LitElement {
         this._floatCorrection = 0;
 
         [this.easingFunction, this.inverseEasingFunction] = ((x1, y1, x2, y2) => [bezier(x1, y1, x2, y2), bezier(y1, x1, y2, x2)])(1, 0, 0.4, 0.6);
-        // this.easingFunction = bezier(0.5, 0.5, 0.5, 0.5);
-        // this.inverseEasingFunction = bezier(0.5, 0.5, 0.5, 0.5);
     }
 
     renderStyle() {
@@ -96,7 +94,7 @@ class Picker extends LitElement {
         if (!now) {
             // setup timestamp and wait until next frame
             this._animating = true;
-            this._lastTimestamp = now;
+            this._lastTimestamp = performance.now();
             return requestAnimationFrame(this.animatePhysics.bind(this));
         }
         
@@ -135,7 +133,6 @@ class Picker extends LitElement {
         let dx = this.easingFunction(Math.min(1, (t + delta) / ANIMATION_TIME)) * ITEM_HEIGHT 
             - this.easingFunction(Math.min(1, t / ANIMATION_TIME)) * ITEM_HEIGHT;
 
-            
         // apply maximum limits
         dx = Math.sign(this._pendingScroll) * Math.min(Math.abs(this._pendingScroll), dx) + this._floatCorrection;
 
@@ -194,7 +191,13 @@ class Picker extends LitElement {
     }
 
     _onTouchEnd(event) {
-        this.trackedTouch = null;
+        if (this.trackedTouch && Array.from(event.changedTouches).find(touch => touch.identifier === this.trackedTouch.identifier)) {
+            this.trackedTouch = null;
+
+            if(!this.checkForStability()) {
+                this.animatePhysics();
+            }
+        }
     }
 
     _onTouchMove(event) {
