@@ -37,6 +37,7 @@ class Picker extends LitElement {
                 :host {
                     display: block;
                     position: relative;
+                    touch-action: none;
                 }
 
                 #container {
@@ -91,10 +92,10 @@ class Picker extends LitElement {
     };
 
     animatePhysics(now) {
-        if (!now) {
+        if (!this._lastTimestamp) {
             // setup timestamp and wait until next frame
+            this._lastTimestamp = now;
             this._animating = true;
-            this._lastTimestamp = performance.now();
             return requestAnimationFrame(this.animatePhysics.bind(this));
         }
         
@@ -105,25 +106,25 @@ class Picker extends LitElement {
 
         // sentinel checks
         if (Math.round(this._pendingScroll) === 0 
-            || container.scrollTop === 0 && this._pendingScroll <= 0
-            || container.scrollTop + container.offsetHeight >= container.scrollHeight) {
+            || container.scrollTop === 0 && this._pendingScroll < 0
+            || container.scrollTop + container.offsetHeight >= container.scrollHeight && this._pendingScroll > 0) {
             return this.resetAnimation();
         }
 
         // Measures the offset distance from previous stable position. 
-        const scrollOffset = this._pendingScroll > 0
-            ? container.scrollTop % ITEM_HEIGHT + this._floatCorrection
-            : (ITEM_HEIGHT - container.scrollTop % ITEM_HEIGHT) % ITEM_HEIGHT - this._floatCorrection;
+        let scrollOffset = this._pendingScroll > 0
+            ? (ITEM_HEIGHT + container.scrollTop + this._floatCorrection) % ITEM_HEIGHT
+            : (ITEM_HEIGHT - (container.scrollTop - this._floatCorrection) % ITEM_HEIGHT) % ITEM_HEIGHT;
 
-        // defensive check
+        // defense mechanism
         if (scrollOffset < 0) {
-            console.error("Not supposed to happen. One of the sentinel checks should have catched this. Resetting animation.", {
+            console.error("Not supposed to happen. One of the sentinel checks should have catched this.", {
                 scrollOffset,
                 _pendingScroll: this._pendingScroll,
                 _floatCorrection: this._floatCorrection
             });
 
-            return this.resetAnimation();
+            scrollOffset = 0;
         }
 
         // calculate total time taken for given scroll offset
@@ -159,9 +160,13 @@ class Picker extends LitElement {
         const container = this.shadowRoot.querySelector("#container");
 
         if (Math.round(this._pendingScroll) === 0) {
-            if (container.scrollTop % ITEM_HEIGHT === 0) {
+            if (this.trackedTouch // external force stabilizing current position
+                || container.scrollTop % ITEM_HEIGHT === 0 // current position already stable
+            ) {
                 return true;
-            } else if(container.scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
+            }
+
+            if(container.scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
                 this._pendingScroll = ITEM_HEIGHT - container.scrollTop % ITEM_HEIGHT;
             } else {
                 this._pendingScroll = -(container.scrollTop % ITEM_HEIGHT);
@@ -179,10 +184,10 @@ class Picker extends LitElement {
     _onKeyDown(event) {
         if (event.key === "ArrowUp") {
             this._pendingScroll -= ITEM_HEIGHT;
-            this._animating || this.animatePhysics();
+            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
         } else if (event.key === "ArrowDown") {
             this._pendingScroll += ITEM_HEIGHT;
-            this._animating || this.animatePhysics();
+            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
         }
     }
 
@@ -195,7 +200,7 @@ class Picker extends LitElement {
             this.trackedTouch = null;
 
             if(!this.checkForStability()) {
-                this.animatePhysics();
+                this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
             }
         }
     }
@@ -203,11 +208,9 @@ class Picker extends LitElement {
     _onTouchMove(event) {
         const currentTouch = this.trackedTouch && Array.from(event.changedTouches).find(touch => touch.identifier === this.trackedTouch.identifier);
 
-
         if (currentTouch) {
-            this.shadowRoot.querySelector("#container").scrollBy({
-                top: this.trackedTouch.screenY - currentTouch.screenY
-            });
+            this._pendingScroll += this.trackedTouch.screenY - currentTouch.screenY;
+            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
 
             this.trackedTouch = currentTouch;
         }
