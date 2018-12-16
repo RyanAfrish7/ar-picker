@@ -23,7 +23,8 @@ class Picker extends LitElement {
         this._pendingScroll = 0;
         this._floatCorrection = 0;
 
-        [this.easingFunction, this.inverseEasingFunction] = ((x1, y1, x2, y2) => [bezier(x1, y1, x2, y2), bezier(y1, x1, y2, x2)])(1, 0, 0.4, 0.6);
+        [this.easingFunction, this.inverseEasingFunction] = 
+            ((x1, y1, x2, y2) => [bezier(x1, y1, x2, y2), bezier(y1, x1, y2, x2)])(0.785, 0.135, 0.15, 0.86);
     }
 
     renderStyle() {
@@ -127,12 +128,15 @@ class Picker extends LitElement {
             scrollOffset = 0;
         }
 
+        // shrink animation time based on force applied
+        const shrunkenAnimationTime = Math.min(ANIMATION_TIME, ANIMATION_TIME * ITEM_HEIGHT / Math.abs(this._pendingScroll));
+
         // calculate total time taken for given scroll offset
-        const t = this.inverseEasingFunction(scrollOffset / ITEM_HEIGHT) * ANIMATION_TIME;
+        const t = this.inverseEasingFunction(scrollOffset / ITEM_HEIGHT) * shrunkenAnimationTime;
 
         // differential distance for given delta
-        let dx = this.easingFunction(Math.min(1, (t + delta) / ANIMATION_TIME)) * ITEM_HEIGHT 
-            - this.easingFunction(Math.min(1, t / ANIMATION_TIME)) * ITEM_HEIGHT;
+        let dx = this.easingFunction(Math.min(1, (t + delta) / shrunkenAnimationTime)) * ITEM_HEIGHT 
+            - this.easingFunction(Math.min(1, t / shrunkenAnimationTime)) * ITEM_HEIGHT;
 
         // apply maximum limits
         dx = Math.sign(this._pendingScroll) * Math.min(Math.abs(this._pendingScroll), dx) + this._floatCorrection;
@@ -145,7 +149,7 @@ class Picker extends LitElement {
         this._pendingScroll -= Math.round(dx);
 
         // capture any float precision errors
-        if(Math.abs(this._floatCorrection) < 1e-10) {
+        if (Math.abs(this._floatCorrection) < 1e-10) {
             this._floatCorrection = 0;
         }
         
@@ -166,7 +170,7 @@ class Picker extends LitElement {
                 return true;
             }
 
-            if(container.scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
+            if (container.scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
                 this._pendingScroll = ITEM_HEIGHT - container.scrollTop % ITEM_HEIGHT;
             } else {
                 this._pendingScroll = -(container.scrollTop % ITEM_HEIGHT);
@@ -199,7 +203,7 @@ class Picker extends LitElement {
         if (this.trackedTouch && Array.from(event.changedTouches).find(touch => touch.identifier === this.trackedTouch.identifier)) {
             this.trackedTouch = null;
 
-            if(!this.checkForStability()) {
+            if (!this.checkForStability()) {
                 this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
             }
         }
