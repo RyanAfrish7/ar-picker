@@ -164,7 +164,7 @@ class Picker extends LitElement {
         const container = this.shadowRoot.querySelector("#container");
 
         if (Math.round(this._pendingScroll) === 0) {
-            if (this.trackedTouch // external force stabilizing current position
+            if (this.trackedTouch || this.externalForce // external force stabilizing current position
                 || container.scrollTop % ITEM_HEIGHT === 0 // current position already stable
             ) {
                 return true;
@@ -221,10 +221,31 @@ class Picker extends LitElement {
     }
 
     _onWheelHandler(event) {
-        this.shadowRoot.querySelector("#container").scrollBy({
-            top: event.deltaY,
-            behavior: event.deltaY === Math.round(event.deltaY) ? "smooth" : undefined
-        });
+        const smoothScroll = event.deltaY === Math.round(event.deltaY);
+
+        if (!smoothScroll) {
+            // assuming trackpad scroll
+            this.externalForce = true;
+            
+            if (this._debounceTimer) {
+                clearTimeout(this._debounceTimer);
+            }
+            
+            this._debounceTimer = setTimeout(() => {
+                this.externalForce = false;
+                this._debounceTimer = null;
+                if(!this.checkForStability()) {
+                    this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+                }
+            }, 500);
+            
+            this._pendingScroll += event.deltaY;
+            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+        } else {
+            // assuming mousewheel scroll
+            this._pendingScroll += Math.floor(event.deltaY / ITEM_HEIGHT) * ITEM_HEIGHT;
+            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+        }
     }
 }
 
