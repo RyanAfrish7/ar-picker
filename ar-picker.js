@@ -73,16 +73,16 @@ class Picker extends LitElement {
                 @touchmove=${{ handleEvent: this._onTouchMove.bind(this), passive: true }}
                 @keydown=${{ handleEvent: this._onKeyDown.bind(this), passive: true }}
                 tabindex="-1">
-                <div class="whitespace"></div>
+                <div class="whitespace start"></div>
                 ${repeat(this.items, this.renderItem.bind(this))}
-                <div class="whitespace"></div>
+                <div class="whitespace end"></div>
             </div>
             <div id="selection-marker"><hr style="margin: 0" /></div>
         `;
     }
 
-    renderItem(item) {
-        return html`<div class="item">${item}</div>`;
+    renderItem(item, index) {
+        return html`<div class="item" @click=${this._onItemClick}>${item}</div>`;
     }
 
     resetAnimation() {
@@ -183,6 +183,14 @@ class Picker extends LitElement {
     _getSelectedIndex() {
         const container = this.shadowRoot.querySelector("#container");
         return Math.round(container.scrollTop / ITEM_HEIGHT);
+    }
+
+    _onItemClick(event) {
+        const whitespaceElement = this.shadowRoot.querySelector(".whitespace.start");
+        const container = this.shadowRoot.querySelector("#container");
+        this._pendingScroll += event.path[0].closest("div.item").offsetTop - (container.scrollTop + whitespaceElement.offsetTop 
+            + whitespaceElement.offsetHeight);
+        this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
     }
 
     _onKeyDown(event) {
