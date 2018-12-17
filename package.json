@@ -14,7 +14,7 @@
   "license": "MIT",
   "dependencies": {
     "@polymer/lit-element": "^0.6.4",
-    "bezier-easing": "file:../bezier-easing",
+    "bezier-easing": "git+https://github.com/RyanAfrish7/bezier-easing.git",
     "lit-html": "^0.14.0"
   }
 }
