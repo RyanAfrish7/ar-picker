@@ -1,7 +1,8 @@
 import { LitElement, html } from "@polymer/lit-element"; 
 import { repeat } from "lit-html/directives/repeat";
-import { style } from "./ar-picker-css";
 import { bezier } from "bezier-easing";
+
+import { style } from "./ar-picker-css";
 
 const ITEM_HEIGHT = 36;
 
@@ -11,7 +12,8 @@ const ITEM_HEIGHT = 36;
  * 
  * @customElement
  * @polymer
- *
+ * @extends HTMLElement
+ * 
  */
 class Picker extends LitElement {
     static get properties() {
@@ -39,10 +41,12 @@ class Picker extends LitElement {
         super();
 
         this._pendingScroll = 0;
-        this._scrollTop = 0;
+        this._currentScroll = 0;
+        this._is_isExternalForceActiveActive = false;
 
         this.animationDuration = 180;
         this.bezierCurve = [0.785, 0.135, 0.15, 0.86];
+        this._animatePhysics = this._animatePhysics.bind(this);
     }
 
     /** 
@@ -55,6 +59,10 @@ class Picker extends LitElement {
         ];
 
         [this.easingFunction, this.inverseEasingFunction] = generateEasingFunctions(...value);
+    }
+
+    get _selectedIndex() {
+        return Math.round(this._currentScroll / ITEM_HEIGHT);
     }
 
     renderStyle() {
@@ -120,15 +128,20 @@ class Picker extends LitElement {
     stopAnimation() {
         this._pendingScroll = 0;
         this._lastTimestamp = null;
-        this._animating = false;
+
+        this._animating && cancelAnimationFrame(this._animating);
+        return this._animating = null;
     };
 
-    animatePhysics(now) {
+    _animatePhysics(now) {
+        if (!now) {
+            return this._animating = requestAnimationFrame(this._animatePhysics);
+        }
+
         if (!this._lastTimestamp) {
             // setup timestamp and wait until next frame
             this._lastTimestamp = now;
-            this._animating = true;
-            return requestAnimationFrame(this.animatePhysics.bind(this));
+            this._animating = requestAnimationFrame(this._animatePhysics);
         }
         
         const container = this.shadowRoot.querySelector("#container");
@@ -137,23 +150,32 @@ class Picker extends LitElement {
         const delta = now - this._lastTimestamp;
 
         // sentinel checks
-        if (Math.round(this._pendingScroll) === 0
-            || this._scrollTop === 0 && this._pendingScroll < 0
-            || this._scrollTop + container.offsetHeight >= wheel.offsetHeight && this._pendingScroll > 0) {
+        if (this._currentScroll === 0 && this._pendingScroll < 0
+            || this._currentScroll + container.offsetHeight >= wheel.offsetHeight && this._pendingScroll > 0) {
             return this.stopAnimation();
+        }
+        
+        // stability check
+        if (this._pendingScroll === 0) {
+            if (this._isWheelStable()) {
+                return this.stopAnimation();
+            } else {
+                this._stabilizeWheel();
+                return requestAnimationFrame(this._animatePhysics);
+            }
         }
 
         // Measures the offset distance from previous stable position. 
         let scrollOffset = this._pendingScroll > 0
-            ? (ITEM_HEIGHT + this._scrollTop) % ITEM_HEIGHT
-            : (ITEM_HEIGHT - this._scrollTop % ITEM_HEIGHT) % ITEM_HEIGHT;
+            ? (ITEM_HEIGHT + this._currentScroll) % ITEM_HEIGHT
+            : (ITEM_HEIGHT - this._currentScroll % ITEM_HEIGHT) % ITEM_HEIGHT;
 
         // defense mechanism
         if (scrollOffset < 0) {
             console.error("Not supposed to happen. One of the sentinel checks should have catched this.", {
                 scrollOffset,
                 _pendingScroll: this._pendingScroll,
-                _scrollTop: this._scrollTop,
+                _currentScroll: this._currentScroll,
             });
 
             scrollOffset = 0;
@@ -162,7 +184,7 @@ class Picker extends LitElement {
         // shrink animation time based on force applied
         const shrunkenAnimationTime = Math.min(this.animationDuration, this.animationDuration * ITEM_HEIGHT / Math.abs(this._pendingScroll));
 
-        // calculate total time taken for given scroll offset
+        // estimate time taken for scroll offset
         const t = this.inverseEasingFunction(scrollOffset / ITEM_HEIGHT) * shrunkenAnimationTime;
 
         // differential distance for given delta
@@ -173,69 +195,57 @@ class Picker extends LitElement {
         dx = Math.sign(this._pendingScroll) * Math.min(Math.abs(this._pendingScroll), dx);
 
         // animate scroll
-        this._scrollTop = Math.max(0, Math.min(wheel.offsetHeight, this._scrollTop + dx));
-        this.shadowRoot.querySelector("#wheel").style.transform = `translateY(${-this._scrollTop}px)`;
+        this._currentScroll = Math.max(0, Math.min(wheel.offsetHeight, this._currentScroll + dx));
+        this._applyPhysics();
 
         // compute animation params for next frame
         this._pendingScroll -= dx;
         this._lastTimestamp = now;
         
-        if (this.checkForStability()) {
+        if (this._isWheelStable()) {
+            const selectedIndex = this._selectedIndex;
+                
+            if (this._selectedItem !== this.items[selectedIndex]) {
+                this._selectedItem = this.items[selectedIndex];
+
+                this.dispatchEvent(new CustomEvent("select", {
+                    detail: { selected: this._selectedItem }
+                }));
+            }
+
             return this.stopAnimation();
         }
 
-        requestAnimationFrame(this.animatePhysics.bind(this));
+        return this._animating = requestAnimationFrame(this._animatePhysics);
     }
 
-    checkForStability() {
-        const container = this.shadowRoot.querySelector("#container");
+    _applyPhysics() {
+        this.shadowRoot.querySelector("#wheel").style.transform = `translateY(${-this._currentScroll}px)`;
+    }
 
-        if (Math.round(this._pendingScroll) === 0) {
-            if (this._scrollTop % ITEM_HEIGHT === 0) {
-                // current position is stable
-                const selectedIndex = Math.round(this._scrollTop / ITEM_HEIGHT);
-                
-                if (this._selectedItem !== this.items[selectedIndex]) {
-                    this._selectedItem = this.items[selectedIndex];
+    _isWheelStable() {
+        return this._pendingScroll === 0 && (
+            this._currentScroll % ITEM_HEIGHT === 0 // is current position stable
+            || this._isExternalForceActive
+        );
+    }
 
-                    this.dispatchEvent(new CustomEvent("select", {
-                        detail: {
-                            selected: this._selectedItem
-                        }
-                    }));
-                }
-
-                return true;
-            }
-
-            if (this.trackedTouch || this.externalForce) {
-                // external force stabilizing current position
-                return true;
-            }
-
-            if (this._scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
-                this._pendingScroll = ITEM_HEIGHT - this._scrollTop % ITEM_HEIGHT;
-            } else {
-                this._pendingScroll = -(this._scrollTop % ITEM_HEIGHT);
-            }
+    _stabilizeWheel() {
+        if (this._currentScroll % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
+            this._pendingScroll = ITEM_HEIGHT - this._currentScroll % ITEM_HEIGHT;
+        } else {
+            this._pendingScroll = -(this._currentScroll % ITEM_HEIGHT);
         }
 
-        return false;
-    }
-
-    _getSelectedIndex() {
-        const container = this.shadowRoot.querySelector("#container");
-        return Math.round(this._scrollTop / ITEM_HEIGHT);
+        this._animatePhysics();
     }
 
     _onItemClick(event) {
         const whitespaceElement = this.shadowRoot.querySelector(".whitespace.start");
-        const container = this.shadowRoot.querySelector("#container");
         const clickedItem = event.path[0].closest("div.item");
 
-        this._pendingScroll += clickedItem.offsetTop - (this._scrollTop + whitespaceElement.offsetTop 
-            + whitespaceElement.offsetHeight);
-        this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+        this._pendingScroll += clickedItem.offsetTop - (this._currentScroll + whitespaceElement.offsetTop + whitespaceElement.offsetHeight);
+        this._animatePhysics();
 
         this.dispatchEvent(new CustomEvent("item-click", {
             detail: {
@@ -247,24 +257,26 @@ class Picker extends LitElement {
     _onKeyDown(event) {
         if (event.key === "ArrowUp") {
             this._pendingScroll -= ITEM_HEIGHT;
-            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+            this._animatePhysics();
         } else if (event.key === "ArrowDown") {
             this._pendingScroll += ITEM_HEIGHT;
-            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+            this._animatePhysics();
         }
     }
 
     _onTouchStart(event) {
-        this.trackedTouch = event.targetTouches[0];
+        if (!this.trackedTouch) {
+            this.trackedTouch = event.changedTouches[0];
+            this._isExternalForceActive = true;
+        }
     }
 
     _onTouchEnd(event) {
         if (this.trackedTouch && Array.from(event.changedTouches).find(touch => touch.identifier === this.trackedTouch.identifier)) {
             this.trackedTouch = null;
+            this._isExternalForceActive = false;
 
-            if (!this.checkForStability()) {
-                this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
-            }
+            this._animatePhysics();
         }
     }
 
@@ -273,7 +285,7 @@ class Picker extends LitElement {
 
         if (currentTouch) {
             this._pendingScroll += this.trackedTouch.screenY - currentTouch.screenY;
-            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+            this._animatePhysics();
 
             this.trackedTouch = currentTouch;
         }
@@ -284,26 +296,26 @@ class Picker extends LitElement {
 
         if (!smoothScroll) {
             // assuming trackpad scroll
-            this.externalForce = true;
+            this._isExternalForceActive = true;
             
             if (this._debounceTimer) {
                 clearTimeout(this._debounceTimer);
             }
             
             this._debounceTimer = setTimeout(() => {
-                this.externalForce = false;
+                this._isExternalForceActive = false;
                 this._debounceTimer = null;
-                if(!this.checkForStability()) {
-                    this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+                if(!this._isWheelStable()) {
+                    this._stabilizeWheel();
                 }
             }, 500);
             
             this._pendingScroll += event.deltaY;
-            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+            this._animatePhysics();
         } else {
             // assuming mousewheel scroll
             this._pendingScroll += Math.floor(event.deltaY / ITEM_HEIGHT) * ITEM_HEIGHT;
-            this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+            this._animatePhysics();
         }
     }
 }
