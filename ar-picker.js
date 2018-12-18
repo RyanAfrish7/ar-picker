@@ -39,7 +39,6 @@ class Picker extends LitElement {
         super();
 
         this._pendingScroll = 0;
-        this._floatCorrection = 0;
         this._scrollTop = 0;
 
         this.animationDuration = 180;
@@ -121,7 +120,6 @@ class Picker extends LitElement {
     stopAnimation() {
         this._pendingScroll = 0;
         this._lastTimestamp = null;
-        this._floatCorrection = 0;
         this._animating = false;
     };
 
@@ -138,8 +136,6 @@ class Picker extends LitElement {
 
         const delta = now - this._lastTimestamp;
 
-        this._lastTimestamp = now;
-
         // sentinel checks
         if (Math.round(this._pendingScroll) === 0
             || this._scrollTop === 0 && this._pendingScroll < 0
@@ -149,15 +145,15 @@ class Picker extends LitElement {
 
         // Measures the offset distance from previous stable position. 
         let scrollOffset = this._pendingScroll > 0
-            ? (ITEM_HEIGHT + this._scrollTop + this._floatCorrection) % ITEM_HEIGHT
-            : (ITEM_HEIGHT - (this._scrollTop - this._floatCorrection) % ITEM_HEIGHT) % ITEM_HEIGHT;
+            ? (ITEM_HEIGHT + this._scrollTop) % ITEM_HEIGHT
+            : (ITEM_HEIGHT - this._scrollTop % ITEM_HEIGHT) % ITEM_HEIGHT;
 
         // defense mechanism
         if (scrollOffset < 0) {
             console.error("Not supposed to happen. One of the sentinel checks should have catched this.", {
                 scrollOffset,
                 _pendingScroll: this._pendingScroll,
-                _floatCorrection: this._floatCorrection
+                _scrollTop: this._scrollTop,
             });
 
             scrollOffset = 0;
@@ -174,20 +170,15 @@ class Picker extends LitElement {
             - this.easingFunction(Math.min(1, t / shrunkenAnimationTime)) * ITEM_HEIGHT;
 
         // apply maximum limits
-        dx = Math.sign(this._pendingScroll) * Math.min(Math.abs(this._pendingScroll), dx) + this._floatCorrection;
+        dx = Math.sign(this._pendingScroll) * Math.min(Math.abs(this._pendingScroll), dx);
 
         // animate scroll
-        this._scrollTop = Math.max(0, Math.min(wheel.offsetHeight, this._scrollTop + Math.round(dx)));
+        this._scrollTop = Math.max(0, Math.min(wheel.offsetHeight, this._scrollTop + dx));
         this.shadowRoot.querySelector("#wheel").style.transform = `translateY(${-this._scrollTop}px)`;
 
-        // compute animation params for next frame if any
-        this._floatCorrection = dx - Math.round(dx);
-        this._pendingScroll -= Math.round(dx);
-
-        // capture any float precision errors
-        if (Math.abs(this._floatCorrection) < 1e-10) {
-            this._floatCorrection = 0;
-        }
+        // compute animation params for next frame
+        this._pendingScroll -= dx;
+        this._lastTimestamp = now;
         
         if (this.checkForStability()) {
             return this.stopAnimation();
