@@ -14,6 +14,7 @@ class Picker extends LitElement {
     static get properties() {
         return {
             items: { type: Array },
+            _selectedItem: { type: Object },
         };
     }
 
@@ -82,7 +83,7 @@ class Picker extends LitElement {
     }
 
     renderItem(item, index) {
-        return html`<div class="item" @click=${this._onItemClick}>${item}</div>`;
+        return html`<div class="item" @click=${this._onItemClick} .data-value=${item}>${item}</div>`;
     }
 
     resetAnimation() {
@@ -164,9 +165,25 @@ class Picker extends LitElement {
         const container = this.shadowRoot.querySelector("#container");
 
         if (Math.round(this._pendingScroll) === 0) {
-            if (this.trackedTouch || this.externalForce // external force stabilizing current position
-                || container.scrollTop % ITEM_HEIGHT === 0 // current position already stable
-            ) {
+            if (container.scrollTop % ITEM_HEIGHT === 0) {
+                // current position is stable
+                const selectedIndex = Math.round(container.scrollTop / ITEM_HEIGHT);
+                
+                if (this._selectedItem !== this.items[selectedIndex]) {
+                    this._selectedItem = this.items[selectedIndex];
+
+                    this.dispatchEvent(new CustomEvent("select", {
+                        detail: {
+                            selected: this._selectedItem
+                        }
+                    }));
+                }
+
+                return true;
+            }
+
+            if (this.trackedTouch || this.externalForce) {
+                // external force stabilizing current position
                 return true;
             }
 
@@ -188,9 +205,17 @@ class Picker extends LitElement {
     _onItemClick(event) {
         const whitespaceElement = this.shadowRoot.querySelector(".whitespace.start");
         const container = this.shadowRoot.querySelector("#container");
-        this._pendingScroll += event.path[0].closest("div.item").offsetTop - (container.scrollTop + whitespaceElement.offsetTop 
+        const clickedItem = event.path[0].closest("div.item");
+
+        this._pendingScroll += clickedItem.offsetTop - (container.scrollTop + whitespaceElement.offsetTop 
             + whitespaceElement.offsetHeight);
         this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
+
+        this.dispatchEvent(new CustomEvent("item-click", {
+            detail: {
+                item: this.clickedItem["data-value"]
+            }
+        }));
     }
 
     _onKeyDown(event) {
