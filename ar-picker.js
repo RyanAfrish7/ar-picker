@@ -4,7 +4,6 @@ import { style } from "./ar-picker-css";
 import { bezier } from "bezier-easing";
 
 const ITEM_HEIGHT = 36;
-const ANIMATION_TIME = 180;
 
 /**
  * `<ar-picker>` is a minimal cupertino style picker which allows user to pick 
@@ -17,7 +16,13 @@ const ANIMATION_TIME = 180;
 class Picker extends LitElement {
     static get properties() {
         return {
-            /** 
+            /**
+             * Time taken (in milliseconds) for scrolling between two stable positions.
+             * This may get shrunken down when scrolled with higher energies. 
+             */
+            animationDuration: { type: Number, reflect: true, hasChanged: () => false },
+
+            /**
              * List of items to be displayed in the wheel 
              */
             items: { type: Array },
@@ -37,6 +42,7 @@ class Picker extends LitElement {
         this._floatCorrection = 0;
         this._scrollTop = 0;
 
+        this.animationDuration = 180;
         this.bezierCurve = [0.785, 0.135, 0.15, 0.86];
     }
 
@@ -158,7 +164,7 @@ class Picker extends LitElement {
         }
 
         // shrink animation time based on force applied
-        const shrunkenAnimationTime = Math.min(ANIMATION_TIME, ANIMATION_TIME * ITEM_HEIGHT / Math.abs(this._pendingScroll));
+        const shrunkenAnimationTime = Math.min(this.animationDuration, this.animationDuration * ITEM_HEIGHT / Math.abs(this._pendingScroll));
 
         // calculate total time taken for given scroll offset
         const t = this.inverseEasingFunction(scrollOffset / ITEM_HEIGHT) * shrunkenAnimationTime;
