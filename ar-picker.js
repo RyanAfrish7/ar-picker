@@ -7,13 +7,25 @@ const ITEM_HEIGHT = 36;
 const ANIMATION_TIME = 180;
 
 /**
-* @polymer
-* @extends HTMLElement
-*/
+ * `<ar-picker>` is a minimal cupertino style picker which allows user to pick 
+ * an item from the list.
+ * 
+ * @customElement
+ * @polymer
+ *
+ */
 class Picker extends LitElement {
     static get properties() {
         return {
+            /** 
+             * List of items to be displayed in the wheel 
+             */
             items: { type: Array },
+
+            /** 
+             * The last selected item. 
+             * WARNING: The wheel may be animating. Prefer using events to obtain the selected item.
+             */
             _selectedItem: { type: Object },
         };
     }
@@ -23,9 +35,21 @@ class Picker extends LitElement {
 
         this._pendingScroll = 0;
         this._floatCorrection = 0;
+        this._scrollTop = 0;
 
-        [this.easingFunction, this.inverseEasingFunction] = 
-            ((x1, y1, x2, y2) => [bezier(x1, y1, x2, y2), bezier(y1, x1, y2, x2)])(0.785, 0.135, 0.15, 0.86);
+        this.bezierCurve = [0.785, 0.135, 0.15, 0.86];
+    }
+
+    /** 
+     * Array of numbers. 
+     * [x1, y1, x2, y2] where (x1, y1) and (x2, y2) are control points which forms convex hull of the curve. 
+     */
+    set bezierCurve(value) {
+        const generateEasingFunctions = (x1, y1, x2, y2) => [
+            bezier(x1, y1, x2, y2), bezier(y1, x1, y2, x2)
+        ];
+
+        [this.easingFunction, this.inverseEasingFunction] = generateEasingFunctions(...value);
     }
 
     renderStyle() {
@@ -74,9 +98,11 @@ class Picker extends LitElement {
                 @touchmove=${{ handleEvent: this._onTouchMove.bind(this), passive: true }}
                 @keydown=${{ handleEvent: this._onKeyDown.bind(this), passive: true }}
                 tabindex="-1">
-                <div class="whitespace start"></div>
-                ${repeat(this.items, this.renderItem.bind(this))}
-                <div class="whitespace end"></div>
+                <div id="wheel">
+                    <div class="whitespace start"></div>
+                    ${repeat(this.items, this.renderItem.bind(this))}
+                    <div class="whitespace end"></div>
+                </div>
             </div>
             <div id="selection-marker"><hr style="margin: 0" /></div>
         `;
@@ -86,7 +112,7 @@ class Picker extends LitElement {
         return html`<div class="item" @click=${this._onItemClick} .data-value=${item}>${item}</div>`;
     }
 
-    resetAnimation() {
+    stopAnimation() {
         this._pendingScroll = 0;
         this._lastTimestamp = null;
         this._floatCorrection = 0;
@@ -102,21 +128,23 @@ class Picker extends LitElement {
         }
         
         const container = this.shadowRoot.querySelector("#container");
+        const wheel = this.shadowRoot.querySelector("#wheel");
+
         const delta = now - this._lastTimestamp;
 
         this._lastTimestamp = now;
 
         // sentinel checks
-        if (Math.round(this._pendingScroll) === 0 
-            || container.scrollTop === 0 && this._pendingScroll < 0
-            || container.scrollTop + container.offsetHeight >= container.scrollHeight && this._pendingScroll > 0) {
-            return this.resetAnimation();
+        if (Math.round(this._pendingScroll) === 0
+            || this._scrollTop === 0 && this._pendingScroll < 0
+            || this._scrollTop + container.offsetHeight >= wheel.offsetHeight && this._pendingScroll > 0) {
+            return this.stopAnimation();
         }
 
         // Measures the offset distance from previous stable position. 
         let scrollOffset = this._pendingScroll > 0
-            ? (ITEM_HEIGHT + container.scrollTop + this._floatCorrection) % ITEM_HEIGHT
-            : (ITEM_HEIGHT - (container.scrollTop - this._floatCorrection) % ITEM_HEIGHT) % ITEM_HEIGHT;
+            ? (ITEM_HEIGHT + this._scrollTop + this._floatCorrection) % ITEM_HEIGHT
+            : (ITEM_HEIGHT - (this._scrollTop - this._floatCorrection) % ITEM_HEIGHT) % ITEM_HEIGHT;
 
         // defense mechanism
         if (scrollOffset < 0) {
@@ -143,7 +171,8 @@ class Picker extends LitElement {
         dx = Math.sign(this._pendingScroll) * Math.min(Math.abs(this._pendingScroll), dx) + this._floatCorrection;
 
         // animate scroll
-        container.scrollTop += Math.round(dx);
+        this._scrollTop = Math.max(0, Math.min(wheel.offsetHeight, this._scrollTop + Math.round(dx)));
+        this.shadowRoot.querySelector("#wheel").style.transform = `translateY(${-this._scrollTop}px)`;
 
         // compute animation params for next frame if any
         this._floatCorrection = dx - Math.round(dx);
@@ -155,7 +184,7 @@ class Picker extends LitElement {
         }
         
         if (this.checkForStability()) {
-            return this.resetAnimation();
+            return this.stopAnimation();
         }
 
         requestAnimationFrame(this.animatePhysics.bind(this));
@@ -165,9 +194,9 @@ class Picker extends LitElement {
         const container = this.shadowRoot.querySelector("#container");
 
         if (Math.round(this._pendingScroll) === 0) {
-            if (container.scrollTop % ITEM_HEIGHT === 0) {
+            if (this._scrollTop % ITEM_HEIGHT === 0) {
                 // current position is stable
-                const selectedIndex = Math.round(container.scrollTop / ITEM_HEIGHT);
+                const selectedIndex = Math.round(this._scrollTop / ITEM_HEIGHT);
                 
                 if (this._selectedItem !== this.items[selectedIndex]) {
                     this._selectedItem = this.items[selectedIndex];
@@ -187,10 +216,10 @@ class Picker extends LitElement {
                 return true;
             }
 
-            if (container.scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
-                this._pendingScroll = ITEM_HEIGHT - container.scrollTop % ITEM_HEIGHT;
+            if (this._scrollTop % ITEM_HEIGHT > ITEM_HEIGHT / 2) {
+                this._pendingScroll = ITEM_HEIGHT - this._scrollTop % ITEM_HEIGHT;
             } else {
-                this._pendingScroll = -(container.scrollTop % ITEM_HEIGHT);
+                this._pendingScroll = -(this._scrollTop % ITEM_HEIGHT);
             }
         }
 
@@ -199,7 +228,7 @@ class Picker extends LitElement {
 
     _getSelectedIndex() {
         const container = this.shadowRoot.querySelector("#container");
-        return Math.round(container.scrollTop / ITEM_HEIGHT);
+        return Math.round(this._scrollTop / ITEM_HEIGHT);
     }
 
     _onItemClick(event) {
@@ -207,13 +236,13 @@ class Picker extends LitElement {
         const container = this.shadowRoot.querySelector("#container");
         const clickedItem = event.path[0].closest("div.item");
 
-        this._pendingScroll += clickedItem.offsetTop - (container.scrollTop + whitespaceElement.offsetTop 
+        this._pendingScroll += clickedItem.offsetTop - (this._scrollTop + whitespaceElement.offsetTop 
             + whitespaceElement.offsetHeight);
         this._animating || requestAnimationFrame(this.animatePhysics.bind(this));
 
         this.dispatchEvent(new CustomEvent("item-click", {
             detail: {
-                item: this.clickedItem["data-value"]
+                item: clickedItem["data-value"]
             }
         }));
     }
