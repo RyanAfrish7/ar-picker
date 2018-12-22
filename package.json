@@ -13,8 +13,8 @@
   "author": "Afrish Khan S <ryanafrish7@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@polymer/lit-element": "^0.6.4",
+    "@polymer/lit-element": "0.6.4",
     "bezier-easing": "git+https://github.com/RyanAfrish7/bezier-easing.git",
-    "lit-html": "^0.14.0"
+    "lit-html": "0.14.0"
   }
 }
