@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.1-alpha.2] - 2018-12-23
+### Added
+- Add 3D rotation like Cupertino Picker
+
 ### Fixed
 - Fix select events not getting thrown for first and last items
 - Fix select events not getting thrown because of float errors
