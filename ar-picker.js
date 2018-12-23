@@ -269,7 +269,7 @@ class Picker extends LitElement {
     _onWheelStable() {
         const selectedIndex = this._selectedIndex;
 
-        if (this._selectedItem !== this.items[selectedIndex]) {
+        if (!this._isExternalForceActive && this._selectedItem !== this.items[selectedIndex]) {
             this._selectedItem = this.items[selectedIndex];
 
             this.dispatchEvent(new CustomEvent("select", {
