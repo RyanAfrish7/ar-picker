@@ -4,7 +4,8 @@ import { bezier } from "bezier-easing";
 
 import { style } from "./ar-picker-css";
 
-const ITEM_HEIGHT = 36;
+const ITEM_HEIGHT = 24;
+const EFFECTIVELY_ZERO = 1e-10;
 
 /**
  * `<ar-picker>` is a minimal cupertino style picker which allows user to pick 
@@ -77,6 +78,7 @@ class Picker extends LitElement {
                     display: block;
                     position: relative;
                     touch-action: none;
+                    --item-height: ${ITEM_HEIGHT}px;
                 }
 
                 #container {
@@ -85,23 +87,30 @@ class Picker extends LitElement {
                     height: 100%;
                     overflow-x: hidden;
                     overflow-y: hidden;
+                    -webkit-font-smoothing: antialiased;
                 }
 
                 #container .whitespace {
-                    height: calc(50% - 36px / 2);
+                    height: calc(50% - var(--item-height) / 2);
                     flex-shrink: 0;
                 }
 
                 #selection-marker {
+                    pointer-events: none;
                     position: absolute;
                     top: 50%;
+                    transform: translateY(-50%);
                     width: 100%;
+                }
+
+                #selection-marker hr {
+                    margin: 0;
                 }
 
                 .item {
                     box-sizing: border-box;
-                    min-height: 36px;
-                    height: 36px;
+                    min-height: var(--item-height);
+                    height: var(--item-height);
                 }
             </style>
             <div id="container"
@@ -117,7 +126,11 @@ class Picker extends LitElement {
                     <div class="whitespace end"></div>
                 </div>
             </div>
-            <div id="selection-marker"><hr style="margin: 0" /></div>
+            <div id="selection-marker">
+                <hr />
+                <div style="height: calc(var(--item-height) * 1.4)"></div>
+                <hr />
+            </div>
         `;
     }
 
@@ -125,7 +138,11 @@ class Picker extends LitElement {
         return html`<div class="item" @click=${this._onItemClick} .data-value=${item}>${item}</div>`;
     }
 
-    stopAnimation() {
+    updated() {
+        this._applyPhysics();
+    }
+
+    _stopAnimation() {
         this._pendingScroll = 0;
         this._lastTimestamp = null;
 
@@ -133,17 +150,17 @@ class Picker extends LitElement {
         return this._animating = null;
     };
 
-    _animatePhysics(now) {
-        if (!now) {
-            return this._animating = requestAnimationFrame(this._animatePhysics);
-        }
+    _startPhysicsAnimation() {
+        this._animating || requestAnimationFrame(this._animatePhysics);
+    }
 
+    _animatePhysics(now) {
         if (!this._lastTimestamp) {
             // setup timestamp and wait until next frame
             this._lastTimestamp = now;
-            this._animating = requestAnimationFrame(this._animatePhysics);
+            return this._animating = requestAnimationFrame(this._animatePhysics);
         }
-        
+
         const container = this.shadowRoot.querySelector("#container");
         const wheel = this.shadowRoot.querySelector("#wheel");
 
@@ -152,16 +169,18 @@ class Picker extends LitElement {
         // sentinel checks
         if (this._currentScroll === 0 && this._pendingScroll < 0
             || this._currentScroll + container.offsetHeight >= wheel.offsetHeight && this._pendingScroll > 0) {
-            return this.stopAnimation();
+            // hard absorption of any remaining force. TODO momentum scrolling
+            this._pendingScroll = 0;
         }
         
         // stability check
-        if (this._pendingScroll === 0) {
+        if (Math.abs(this._pendingScroll) <= EFFECTIVELY_ZERO) {
             if (this._isWheelStable()) {
-                return this.stopAnimation();
+                return this._stopAnimation();
             } else {
                 this._stabilizeWheel();
-                return requestAnimationFrame(this._animatePhysics);
+                this._lastTimestamp = now;
+                return this._animating = requestAnimationFrame(this._animatePhysics);
             }
         }
 
@@ -176,6 +195,9 @@ class Picker extends LitElement {
                 scrollOffset,
                 _pendingScroll: this._pendingScroll,
                 _currentScroll: this._currentScroll,
+                delta,
+                _lastTimestamp: this._lastTimestamp,
+                now
             });
 
             scrollOffset = 0;
@@ -196,6 +218,8 @@ class Picker extends LitElement {
 
         // animate scroll
         this._currentScroll = Math.max(0, Math.min(wheel.offsetHeight, this._currentScroll + dx));
+        this._currentScroll = Math.round(this._currentScroll / EFFECTIVELY_ZERO) * EFFECTIVELY_ZERO;
+
         this._applyPhysics();
 
         // compute animation params for next frame
@@ -213,21 +237,41 @@ class Picker extends LitElement {
                 }));
             }
 
-            return this.stopAnimation();
+            return this._stopAnimation();
         }
 
         return this._animating = requestAnimationFrame(this._animatePhysics);
     }
 
     _applyPhysics() {
-        this.shadowRoot.querySelector("#wheel").style.transform = `translateY(${-this._currentScroll}px)`;
+        const container = this.shadowRoot.querySelector("#container");
+        
+        this.shadowRoot.querySelectorAll("#container .item").forEach((item, i) => {
+            let angle = 0;
+            let dy = -this._currentScroll;
+            let scale = 1;
+
+            if (Math.abs(i * ITEM_HEIGHT - this._currentScroll) < container.offsetHeight / 2) {
+                angle = (i * ITEM_HEIGHT - this._currentScroll) / (container.offsetHeight / 2) * Math.PI / 2;
+                dy =  (container.offsetHeight / 2) * Math.sin(angle) - i * ITEM_HEIGHT;
+                scale = 1 + 0.4 * (1 - Math.abs(angle / Math.PI * 2));
+                
+                item.classList.toggle("selected", Math.abs(i * ITEM_HEIGHT - this._currentScroll) < ITEM_HEIGHT / 2);
+            }
+
+            item.style.transform = `translateY(${dy}px) rotateX(${angle}rad) scale(${scale})`;
+        });
     }
 
     _isWheelStable() {
-        return this._pendingScroll === 0 && (
-            this._currentScroll % ITEM_HEIGHT === 0 // is current position stable
-            || this._isExternalForceActive
-        );
+        if (Math.abs(this._pendingScroll) <= EFFECTIVELY_ZERO) {
+            this._pendingScroll = 0;
+
+            return this._currentScroll % ITEM_HEIGHT === 0 // is current position stable
+                || this._isExternalForceActive;
+        }
+        
+        return false;
     }
 
     _stabilizeWheel() {
@@ -237,7 +281,7 @@ class Picker extends LitElement {
             this._pendingScroll = -(this._currentScroll % ITEM_HEIGHT);
         }
 
-        this._animatePhysics();
+        this._startPhysicsAnimation();
     }
 
     _onItemClick(event) {
@@ -245,11 +289,11 @@ class Picker extends LitElement {
         const clickedItem = event.path[0].closest("div.item");
 
         this._pendingScroll += clickedItem.offsetTop - (this._currentScroll + whitespaceElement.offsetTop + whitespaceElement.offsetHeight);
-        this._animatePhysics();
+        this._startPhysicsAnimation();
 
-        this.dispatchEvent(new CustomEvent("item-click", {
+        this.dispatchEvent(new CustomEvent("select", {
             detail: {
-                item: clickedItem["data-value"]
+                selected: clickedItem["data-value"]
             }
         }));
     }
@@ -257,10 +301,10 @@ class Picker extends LitElement {
     _onKeyDown(event) {
         if (event.key === "ArrowUp") {
             this._pendingScroll -= ITEM_HEIGHT;
-            this._animatePhysics();
+            this._startPhysicsAnimation();
         } else if (event.key === "ArrowDown") {
             this._pendingScroll += ITEM_HEIGHT;
-            this._animatePhysics();
+            this._startPhysicsAnimation();
         }
     }
 
@@ -276,7 +320,7 @@ class Picker extends LitElement {
             this.trackedTouch = null;
             this._isExternalForceActive = false;
 
-            this._animatePhysics();
+            this._startPhysicsAnimation();
         }
     }
 
@@ -285,7 +329,7 @@ class Picker extends LitElement {
 
         if (currentTouch) {
             this._pendingScroll += this.trackedTouch.screenY - currentTouch.screenY;
-            this._animatePhysics();
+            this._startPhysicsAnimation();
 
             this.trackedTouch = currentTouch;
         }
@@ -308,14 +352,14 @@ class Picker extends LitElement {
                 if(!this._isWheelStable()) {
                     this._stabilizeWheel();
                 }
-            }, 500);
+            }, 600);
             
             this._pendingScroll += event.deltaY;
-            this._animatePhysics();
+            this._startPhysicsAnimation();
         } else {
             // assuming mousewheel scroll
             this._pendingScroll += Math.floor(event.deltaY / ITEM_HEIGHT) * ITEM_HEIGHT;
-            this._animatePhysics();
+            this._startPhysicsAnimation();
         }
     }
 }
