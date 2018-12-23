@@ -7,6 +7,8 @@ import { style } from "./ar-picker-css";
 const ITEM_HEIGHT = 24;
 const EFFECTIVELY_ZERO = 1e-10;
 
+const approxEq = (value1, value2, delta = EFFECTIVELY_ZERO) => Math.abs(value1 - value2) <= delta;
+
 /**
  * `<ar-picker>` is a minimal cupertino style picker which allows user to pick 
  * an item from the list.
@@ -166,8 +168,6 @@ class Picker extends LitElement {
         const container = this.shadowRoot.querySelector("#container");
         const wheel = this.shadowRoot.querySelector("#wheel");
 
-        const delta = now - this._lastTimestamp;
-
         // sentinel checks
         if (this._currentScroll === 0 && this._pendingScroll < 0
             || this._currentScroll + container.offsetHeight >= wheel.offsetHeight && this._pendingScroll > 0) {
@@ -176,7 +176,7 @@ class Picker extends LitElement {
         }
         
         // stability check
-        if (Math.abs(this._pendingScroll) <= EFFECTIVELY_ZERO) {
+        if (approxEq(this._pendingScroll, 0)) {
             if (this._isWheelStable()) {
                 return this._onWheelStable();
             } else {
@@ -185,6 +185,8 @@ class Picker extends LitElement {
                 return this._animating = requestAnimationFrame(this._animatePhysics);
             }
         }
+
+        const delta = now - this._lastTimestamp;
 
         // Measures the offset distance from previous stable position. 
         let scrollOffset = this._pendingScroll > 0
@@ -220,7 +222,9 @@ class Picker extends LitElement {
 
         // animate scroll
         this._currentScroll = Math.max(0, Math.min(wheel.offsetHeight, this._currentScroll + dx));
-        this._currentScroll = Math.round(this._currentScroll / EFFECTIVELY_ZERO) * EFFECTIVELY_ZERO;
+        if (approxEq(this._currentScroll, Math.round(this._currentScroll))) {
+            this._currentScroll = Math.round(this._currentScroll);
+        }
 
         this._applyPhysics();
 
@@ -228,10 +232,6 @@ class Picker extends LitElement {
         this._pendingScroll -= dx;
         this._lastTimestamp = now;
         
-        if (this._isWheelStable()) {
-            return this._onWheelStable();
-        }
-
         return this._animating = requestAnimationFrame(this._animatePhysics);
     }
 
@@ -256,10 +256,10 @@ class Picker extends LitElement {
     }
 
     _isWheelStable() {
-        if (Math.abs(this._pendingScroll) <= EFFECTIVELY_ZERO) {
+        if (approxEq(this._pendingScroll, 0)) {
             this._pendingScroll = 0;
 
-            return this._currentScroll % ITEM_HEIGHT === 0 // is current position stable
+            return approxEq(this._currentScroll % ITEM_HEIGHT, 0) // is current position stable
                 || this._isExternalForceActive;
         }
         
@@ -268,7 +268,7 @@ class Picker extends LitElement {
 
     _onWheelStable() {
         const selectedIndex = this._selectedIndex;
-                
+
         if (this._selectedItem !== this.items[selectedIndex]) {
             this._selectedItem = this.items[selectedIndex];
 
