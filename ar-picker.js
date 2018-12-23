@@ -127,9 +127,11 @@ class Picker extends LitElement {
                 </div>
             </div>
             <div id="selection-marker">
-                <hr />
-                <div style="height: calc(var(--item-height) * 1.4)"></div>
-                <hr />
+                <slot name="selection-marker">
+                    <hr />
+                    <div style="height: calc(var(--item-height) * 1.4)"></div>
+                    <hr />
+                </slot>
             </div>
         `;
     }
@@ -176,7 +178,7 @@ class Picker extends LitElement {
         // stability check
         if (Math.abs(this._pendingScroll) <= EFFECTIVELY_ZERO) {
             if (this._isWheelStable()) {
-                return this._stopAnimation();
+                return this._onWheelStable();
             } else {
                 this._stabilizeWheel();
                 this._lastTimestamp = now;
@@ -227,17 +229,7 @@ class Picker extends LitElement {
         this._lastTimestamp = now;
         
         if (this._isWheelStable()) {
-            const selectedIndex = this._selectedIndex;
-                
-            if (this._selectedItem !== this.items[selectedIndex]) {
-                this._selectedItem = this.items[selectedIndex];
-
-                this.dispatchEvent(new CustomEvent("select", {
-                    detail: { selected: this._selectedItem }
-                }));
-            }
-
-            return this._stopAnimation();
+            return this._onWheelStable();
         }
 
         return this._animating = requestAnimationFrame(this._animatePhysics);
@@ -272,6 +264,20 @@ class Picker extends LitElement {
         }
         
         return false;
+    }
+
+    _onWheelStable() {
+        const selectedIndex = this._selectedIndex;
+                
+        if (this._selectedItem !== this.items[selectedIndex]) {
+            this._selectedItem = this.items[selectedIndex];
+
+            this.dispatchEvent(new CustomEvent("select", {
+                detail: { selected: this._selectedItem }
+            }));
+        }
+
+        return this._stopAnimation();
     }
 
     _stabilizeWheel() {

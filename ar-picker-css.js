@@ -14,5 +14,9 @@ export const style = html`
             color: black;
             transition: color 0.6s;
         }
+
+        #selection-marker hr {
+            background-color: black;
+        }
     </style>
 `;
